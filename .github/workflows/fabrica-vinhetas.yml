@@ -89,7 +89,7 @@ jobs:
             test -s "$temp"
             ACTUAL_DURATION=$(ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 "$temp")
             echo "VALIDADO - $temp | duracao: $ACTUAL_DURATION s"
-            mv "$temp" "$video"
+            cp "$temp" "$video"
             GENERATED=$((GENERATED + 1))
           done
 
