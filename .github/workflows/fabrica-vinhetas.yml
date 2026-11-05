@@ -1,0 +1,133 @@
+name: CINEMA ENGINE - Fabrica de Vinhetas
+on:
+  workflow_dispatch:
+    inputs:
+      duration:
+        description: Duracao de cada vinheta
+        required: true
+        type: choice
+        options: ["6", "7", "8"]
+        default: "6"
+  push:
+    branches: [main]
+    paths:
+      - "assets/tratadas/*.webp"
+      - ".github/workflows/fabrica-vinhetas.yml"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: cinema-engine-fabrica-vinhetas
+  cancel-in-progress: false
+
+jobs:
+  renderizar:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Baixar repositorio
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Instalar FFmpeg e FFprobe
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg
+          ffmpeg -version | head -n 1
+          ffprobe -version | head -n 1
+
+      - name: Detectar MP4 existentes e renderizar somente os ausentes
+        env:
+          DURATION: ${{ inputs.duration || '6' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p media output
+          END_FADE=$((DURATION - 1))
+          GENERATED=0
+          SKIPPED=0
+
+          # Cada imagem tratada corresponde a um MP4 com o mesmo nome-base.
+          PRESENTERS=(
+            "lia-desenhos"
+            "ayla-aventura"
+            "bia-libras"
+            "clara-acessivel"
+            "eduarda-educacao"
+            "helena-classicos"
+            "maya-romance"
+            "raven-acao"
+            "vivi-trailers"
+          )
+
+          for slug in "${PRESENTERS[@]}"; do
+            image="assets/tratadas/${slug}.webp"
+            video="media/${slug}.mp4"
+            temp="output/${slug}.mp4"
+
+            if [[ -e "$video" ]]; then
+              echo "SKIP - MP4 ja existe: $video (nao sera sobrescrito)"
+              SKIPPED=$((SKIPPED + 1))
+              continue
+            fi
+
+            if [[ ! -s "$image" ]]; then
+              echo "::error::Imagem tratada ausente ou vazia: $image"
+              exit 1
+            fi
+
+            echo "RENDER - $slug | duracao: ${DURATION}s"
+            ffmpeg -hide_banner -y \
+              -loop 1 -framerate 24 -i "$image" \
+              -filter_complex "[0:v]scale=1280:720:force_original_aspect_ratio=increase,crop=1280:720,zoompan=z='min(zoom+0.00028,1.035)':x='iw/2-(iw/zoom/2)+6*sin(on/160)':y='ih/2-(ih/zoom/2)':d=1:s=1280x720:fps=24,trim=duration=${DURATION},setpts=PTS-STARTPTS,fade=t=in:st=0:d=0.4,fade=t=out:st=${END_FADE}:d=0.7,format=yuv420p[v]" \
+              -map "[v]" -an -t "$DURATION" -r 24 \
+              -c:v libx264 -preset veryfast -crf 22 -movflags +faststart \
+              "$temp"
+
+            test -s "$temp"
+            ACTUAL_DURATION=$(ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 "$temp")
+            echo "VALIDADO - $temp | duracao: $ACTUAL_DURATION s"
+            mv "$temp" "$video"
+            GENERATED=$((GENERATED + 1))
+          done
+
+          echo "RESUMO: gerados=$GENERATED | ignorados_por_existirem=$SKIPPED"
+          echo "$GENERATED" > output/generated-count.txt
+
+      - name: Disponibilizar novos MP4 como artefato
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cinema-engine-vinhetas-geradas
+          path: |
+            output/*.mp4
+            output/generated-count.txt
+          if-no-files-found: warn
+          retention-days: 30
+
+      - name: Publicar somente os novos MP4 em media
+        if: success()
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          # Adiciona somente MP4 que foram criados nesta execucao.
+          for file in media/*.mp4; do
+            [[ -f "$file" ]] || continue
+            slug="$(basename "$file" .mp4)"
+            if [[ -f "output/$slug.mp4" ]]; then
+              git add -- "$file"
+            fi
+          done
+
+          if git diff --cached --quiet; then
+            echo "Nenhum MP4 novo para publicar. Todos os videos ja existiam."
+            exit 0
+          fi
+
+          git commit -m "Gerar vinhetas ausentes das apresentadoras"
+          git push
