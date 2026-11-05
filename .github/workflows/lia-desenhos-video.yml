@@ -18,8 +18,8 @@ jobs:
         uses: actions/checkout@v4
       - name: Verificar imagem original da Lia
         run: |
-          if [ ! -f assets/lia-desenhos.png ]; then
-            echo "::error::Imagem não encontrada. Envie a imagem escolhida para assets/lia-desenhos.png"
+          if [ ! -f assets/lia-desenhos.png. ]; then
+            echo "::error::Imagem não encontrada. Envie a imagem escolhida para assets/lia-desenhos.png."
             exit 1
           fi
       - name: Renderizar vinheta MP4 com FFmpeg
@@ -28,7 +28,7 @@ jobs:
         run: |
           mkdir -p output
           END_FADE=$((DURATION - 1))
-          ffmpeg -y -loop 1 -framerate 24 -i assets/lia-desenhos.png \
+          ffmpeg -y -loop 1 -framerate 24 -i assets/lia-desenhos.png. \
             -filter_complex "[0:v]split=2[bg][fg];[bg]scale=1280:720:force_original_aspect_ratio=increase,crop=1280:720,boxblur=28:12,eq=brightness=-0.28:saturation=0.8[back];[fg]scale=960:720:force_original_aspect_ratio=decrease[front];[back][front]overlay=(W-w)/2:(H-h)/2,zoompan=z='min(zoom+0.00035,1.045)':d=1:s=1280x720:fps=24,trim=duration=${DURATION},setpts=PTS-STARTPTS,fade=t=in:st=0:d=0.45,fade=t=out:st=${END_FADE}:d=0.8,format=yuv420p[v]" \
             -map "[v]" -an -t "$DURATION" -r 24 \
             -c:v libx264 -preset veryfast -crf 23 -movflags +faststart \
