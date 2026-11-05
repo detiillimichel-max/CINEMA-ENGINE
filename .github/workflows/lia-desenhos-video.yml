@@ -1,0 +1,45 @@
+name: OIO Fam TV - Vinheta Lia Desenhos
+on:
+  workflow_dispatch:
+    inputs:
+      duration:
+        description: Duração da vinheta
+        required: true
+        type: choice
+        options: ["5", "6", "7", "8"]
+        default: "6"
+permissions:
+  contents: read
+jobs:
+  render:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Baixar repositório
+        uses: actions/checkout@v4
+      - name: Verificar imagem original da Lia
+        run: |
+          if [ ! -f assets/lia-desenhos.png ]; then
+            echo "::error::Imagem não encontrada. Envie a imagem escolhida para assets/lia-desenhos.png"
+            exit 1
+          fi
+      - name: Renderizar vinheta MP4 com FFmpeg
+        env:
+          DURATION: \${{ inputs.duration }}
+        run: |
+          mkdir -p output
+          END_FADE=$((DURATION - 1))
+          ffmpeg -y -loop 1 -framerate 24 -i assets/lia-desenhos.png \
+            -filter_complex "[0:v]split=2[bg][fg];[bg]scale=1280:720:force_original_aspect_ratio=increase,crop=1280:720,boxblur=28:12,eq=brightness=-0.28:saturation=0.8[back];[fg]scale=960:720:force_original_aspect_ratio=decrease[front];[back][front]overlay=(W-w)/2:(H-h)/2,zoompan=z='min(zoom+0.00035,1.045)':d=1:s=1280x720:fps=24,trim=duration=\${DURATION},setpts=PTS-STARTPTS,fade=t=in:st=0:d=0.45,fade=t=out:st=\${END_FADE}:d=0.8,format=yuv420p[v]" \
+            -map "[v]" -an -t "$DURATION" -r 24 \
+            -c:v libx264 -preset veryfast -crf 23 -movflags +faststart \
+            "output/lia-desenhos-\${DURATION}s.mp4"
+      - name: Verificar vídeo gerado
+        run: |
+          test -s "output/lia-desenhos-\${{ inputs.duration }}s.mp4"
+          ffprobe -v error -show_entries format=duration,size -of default=noprint_wrappers=1 "output/lia-desenhos-\${{ inputs.duration }}s.mp4"
+      - name: Disponibilizar MP4 como artefato
+        uses: actions/upload-artifact@v4
+        with:
+          name: lia-desenhos-vinheta-\${{ inputs.duration }}s
+          path: output/lia-desenhos-\${{ inputs.duration }}s.mp4
+          retention-days: 30
