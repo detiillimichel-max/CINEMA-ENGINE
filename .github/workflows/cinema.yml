@@ -1,0 +1,35 @@
+name: Cinema Engine - validar curta
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'index.html'
+      - '.github/workflows/cinema.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  validar-curta:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Baixar código
+        uses: actions/checkout@v4
+      - name: Verificar estrutura do filme
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import re
+          html = Path("index.html").read_text(encoding="utf-8")
+          checks = {
+              "Canvas": '<canvas id="film"' in html,
+              "JavaScript": "<script>" in html and "</script>" in html,
+              "Duração de 30 segundos": "const W=1280,H=720,D=30" in html,
+              "Sem imagens externas": not re.search(r'<img\b[^>]*\bsrc\s*=\s*["\']https?://', html, re.I),
+              "Sem vídeos externos": not re.search(r'<video\b[^>]*\bsrc\s*=\s*["\']https?://', html, re.I),
+              "Sem bibliotecas externas": not re.search(r'<script[^>]+src\s*=\s*["\']https?://', html, re.I),
+          }
+          for label, ok in checks.items():
+              print(("OK" if ok else "FALHOU") + " - " + label)
+          if not all(checks.values()):
+              raise SystemExit("Validacao do curta falhou.")
+          PY
